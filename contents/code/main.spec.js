@@ -55,6 +55,106 @@ it('calls registerShortcut in main', () => {
   expect(global.registerShortcut).toHaveBeenCalledTimes(6);
 });
 
+describe('isWayland', () => {
+  beforeEach(() => {
+    // Clean up workspace mocks
+    delete global.workspace.compositorType;
+    delete global.workspace.cursorPos;
+    delete global.workspace.virtualScreenSize;
+  });
+
+  it('should detect X11 environment', () => {
+    // Mock X11 environment
+    global.workspace.compositorType = 'x11';
+    expect(Yanjing.isWayland()).toBe(false);
+  });
+
+  it('should detect Wayland environment', () => {
+    // Mock Wayland environment
+    global.workspace.compositorType = 'wayland';
+    global.workspace.cursorPos = { x: 0, y: 0 };
+    global.workspace.virtualScreenSize = { width: 1920, height: 1080 };
+    expect(Yanjing.isWayland()).toBe(true);
+  });
+
+  it('should return false when compositor type is not wayland', () => {
+    global.workspace.compositorType = 'other';
+    global.workspace.cursorPos = { x: 0, y: 0 };
+    global.workspace.virtualScreenSize = { width: 1920, height: 1080 };
+    expect(Yanjing.isWayland()).toBe(false);
+  });
+});
+
+describe('setGeometry', () => {
+  beforeEach(() => {
+    // Reset to X11 by default for consistent test behavior
+    global.workspace.compositorType = 'x11';
+    delete global.workspace.cursorPos;
+    delete global.workspace.virtualScreenSize;
+  });
+
+  it('should use frameGeometry on X11', () => {
+    const win = {
+      frameGeometry: { x: 0, y: 0, width: 100, height: 100 },
+    };
+    
+    Yanjing.setGeometry(win, { x: 50, width: 200 });
+    
+    expect(win.frameGeometry.x).toBe(50);
+    expect(win.frameGeometry.width).toBe(200);
+  });
+
+  it('should use resize method on Wayland when available', () => {
+    // Mock Wayland environment
+    global.workspace.compositorType = 'wayland';
+    global.workspace.cursorPos = { x: 0, y: 0 };
+    global.workspace.virtualScreenSize = { width: 1920, height: 1080 };
+    
+    const win = {
+      frameGeometry: { x: 0, y: 0, width: 100, height: 100 },
+      resize: jest.fn(),
+    };
+    
+    Yanjing.setGeometry(win, { width: 200, height: 150 });
+    
+    expect(win.resize).toHaveBeenCalledWith(200, 150);
+  });
+
+  it('should handle positioning on Wayland', () => {
+    // Mock Wayland environment
+    global.workspace.compositorType = 'wayland';
+    global.workspace.cursorPos = { x: 0, y: 0 };
+    global.workspace.virtualScreenSize = { width: 1920, height: 1080 };
+    
+    const win = {
+      frameGeometry: { x: 0, y: 0, width: 100, height: 100 },
+    };
+    
+    Yanjing.setGeometry(win, { x: 50, y: 30 });
+    
+    expect(win.frameGeometry.x).toBe(50);
+    expect(win.frameGeometry.y).toBe(30);
+  });
+
+  it('should fall back to frameGeometry on Wayland if resize method not available', () => {
+    // Mock Wayland environment
+    global.workspace.compositorType = 'wayland';
+    global.workspace.cursorPos = { x: 0, y: 0 };
+    global.workspace.virtualScreenSize = { width: 1920, height: 1080 };
+    
+    const win = {
+      frameGeometry: { x: 0, y: 0, width: 100, height: 100 },
+      // No resize method available
+    };
+    
+    Yanjing.setGeometry(win, { width: 200, height: 150 });
+    
+    // Should still set frameGeometry even on Wayland if no resize method
+    expect(win.frameGeometry.width).toBe(200);
+    expect(win.frameGeometry.height).toBe(150);
+  });
+});
+
 describe('sanitizeSizes', () => {
   it('returns array of filtered floats', () => {
     expect(Yanjing.sanitizeSizes('0, 5, 10, x, 111.111, 0, 222.333')).toEqual([
