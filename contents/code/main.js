@@ -59,6 +59,60 @@ Yanjing.getWorkAreaRect = function () {
 };
 
 /**
+ * Detect if we're running on Wayland
+ * @return {boolean}
+ */
+Yanjing.isWayland = function () {
+  // Check for Wayland compositor type via workspace properties
+  return typeof workspace.cursorPos !== 'undefined' &&
+         typeof workspace.virtualScreenSize !== 'undefined' &&
+         workspace.compositorType === 'wayland';
+};
+
+/**
+ * Set window geometry with Wayland compatibility
+ * @param {KWin::AbstractClient} win
+ * @param {Object} newGeometry - geometry object with x, y, width, height
+ * @return {boolean} success
+ */
+Yanjing.setGeometry = function (win, newGeometry) {
+  if (Yanjing.isWayland()) {
+    // On Wayland, use the resize method when available for better compatibility
+    if (typeof win.resize === 'function' && newGeometry.width && newGeometry.height) {
+      win.resize(newGeometry.width, newGeometry.height);
+    } else if (newGeometry.width !== undefined || newGeometry.height !== undefined) {
+      // Fall back to frameGeometry if resize method not available
+      var rect = win.frameGeometry;
+      if (newGeometry.width !== undefined) rect.width = newGeometry.width;
+      if (newGeometry.height !== undefined) rect.height = newGeometry.height;
+      win.frameGeometry = rect;
+    }
+    
+    // For positioning, still use frameGeometry but be more careful
+    if (newGeometry.x !== undefined || newGeometry.y !== undefined) {
+      var rect = win.frameGeometry;
+      if (newGeometry.x !== undefined) {
+        rect.x = newGeometry.x;
+      }
+      if (newGeometry.y !== undefined) {
+        rect.y = newGeometry.y;
+      }
+      win.frameGeometry = rect;
+    }
+    return true;
+  } else {
+    // On X11, use direct frameGeometry assignment as before
+    var rect = win.frameGeometry;
+    if (newGeometry.x !== undefined) rect.x = newGeometry.x;
+    if (newGeometry.y !== undefined) rect.y = newGeometry.y;
+    if (newGeometry.width !== undefined) rect.width = newGeometry.width;
+    if (newGeometry.height !== undefined) rect.height = newGeometry.height;
+    win.frameGeometry = rect;
+    return true;
+  }
+};
+
+/**
  * @param {QRect} rect
  * @return {number}
  */
@@ -142,8 +196,9 @@ Yanjing.cycle = function (win, dir) {
   var rect = win.frameGeometry; // { width, height, x, y }
   var winWidth = rect.width; // 500
   var nextWidth = Yanjing.getNextWidth(winWidth);
-  rect.width = nextWidth;
-  win.frameGeometry = rect;
+  
+  // Use Wayland-compatible geometry setting
+  Yanjing.setGeometry(win, { width: nextWidth });
 
   // Move again after cycle to fix reposition due to resize
   var after = Yanjing.AfterCycle[dir];
@@ -165,8 +220,8 @@ Yanjing.unmax = function (win) {
     win.setMaximize(VERTICAL, HORIZONTAL);
 
     // Restore previous maximized size, but now unmaxed so has drop shadows
-    // and window borders.
-    win.frameGeometry = maxedRect;
+    // and window borders. Use Wayland-compatible geometry setting
+    Yanjing.setGeometry(win, maxedRect);
   }
   return win;
 };
@@ -206,9 +261,8 @@ Yanjing.Move[Yanjing.Dirs.Left] = function (win) {
     return Yanjing.States.NOOP;
   }
 
-  var rect = win.frameGeometry;
-  rect.x = workAreaLeftEdge;
-  win.frameGeometry = rect;
+  // Use Wayland-compatible geometry setting
+  Yanjing.setGeometry(win, { x: workAreaLeftEdge });
   return Yanjing.States.DONE;
 };
 
@@ -232,8 +286,8 @@ Yanjing.Move[Yanjing.Dirs.Right] = function (win) {
     return Yanjing.States.NOOP;
   }
 
-  rect.x = workAreaRightEdge - rect.width;
-  win.frameGeometry = rect;
+  // Use Wayland-compatible geometry setting
+  Yanjing.setGeometry(win, { x: workAreaRightEdge - rect.width });
   return Yanjing.States.DONE;
 };
 
@@ -259,8 +313,9 @@ Yanjing.Move[Yanjing.Dirs.Center] = function (win) {
   }
 
   var distance = workspaceCenterX - winCenterX;
-  rect.x = rect.x + distance;
-  win.frameGeometry = rect;
+  
+  // Use Wayland-compatible geometry setting
+  Yanjing.setGeometry(win, { x: rect.x + distance });
   return Yanjing.States.DONE;
 };
 
@@ -299,10 +354,13 @@ Yanjing.yMax = function (win) {
 
   // Work area for the active win, considers things like docks!
   var workAreaRect = Yanjing.getWorkAreaRect();
-  var rect = win.frameGeometry;
-  rect.y = workAreaRect.y;
-  rect.height = workAreaRect.height;
-  win.frameGeometry = rect;
+  
+  // Use Wayland-compatible geometry setting
+  Yanjing.setGeometry(win, { 
+    y: workAreaRect.y, 
+    height: workAreaRect.height 
+  });
+  
   return Yanjing.States.DONE;
 };
 
